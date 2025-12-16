@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wound Vac Tracker</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    body { margin: 0; background: #0b0e14; color: #e8eefc; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    h1 { margin: 0; font-size: 22px; }
+    .sub { margin: 6px 0 0; color: #a7b2cc; font-size: 13px; }
+    .card { background: #121829; border: 1px solid #202845; border-radius: 14px; padding: 14px; margin-top: 14px; }
+    .alert { margin-top: 12px; background:#2a1a1a; border:1px solid #5a2b2b; padding:10px 12px; border-radius: 10px; color:#ffd2d2; }
+    .ok { margin-top: 12px; background:#132a1a; border:1px solid #2b5a3a; padding:10px 12px; border-radius: 10px; color:#d2ffe4; }
+    .grid { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    label { display:flex; flex-direction:column; gap: 6px; font-size: 13px; color: #b8c2dd; }
+    input, select { padding: 10px 10px; border-radius: 10px; border: 1px solid #2a355c; background:#0e1426; color:#e8eefc; outline: none; }
+    input::placeholder { color:#637099; }
+    .wide { grid-column: 1 / -1; }
+    .actions { display:flex; align-items:center; gap: 12px; flex-wrap: wrap; }
+    .hint { color:#9fb0d8; font-size: 12px; }
+    .btn { padding: 10px 12px; border-radius: 10px; border:1px solid #2a355c; background:#0e1426; color:#e8eefc; cursor:pointer; }
+    .btn:disabled { opacity: 0.6; cursor:not-allowed; }
+    .primary { background:#1a3cff; border-color:#1a3cff; }
+    .danger { background:#2a1a1a; border-color:#5a2b2b; }
+    .row { display:flex; align-items:center; justify-content:space-between; gap: 12px; flex-wrap: wrap; }
+    .search { width: 320px; max-width: 100%; }
+    .table { display:flex; flex-direction:column; gap: 8px; margin-top: 10px; }
+    .thead, .trow { display:grid; grid-template-columns: 1.2fr 1fr 1fr 0.9fr 0.9fr; gap: 10px; align-items:start; }
+    .thead { color:#9fb0d8; font-size: 12px; padding: 0 6px; }
+    .trow { background:#0e1426; border:1px solid #202845; border-radius: 12px; padding: 10px; }
+    .strong { font-weight: 700; }
+    .muted { color:#9aa7c7; font-size: 12px; margin-top: 4px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace; font-size: 12px; color:#c7d2f2; }
+    .btnrow { display:flex; gap: 8px; flex-wrap: wrap; }
+    .footer { margin: 14px 2px; }
+    .pill { display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border-radius: 12px; border:1px solid #202845; background:#0e1426; }
+
+    /* Scan modal */
+    .modalBack {
+      position: fixed; inset: 0; background: rgba(0,0,0,.55);
+      display:none; align-items:center; justify-content:center; padding: 16px; z-index: 9999;
+    }
+    .modal {
+      width: min(720px, 100%);
+      background:#121829; border:1px solid #202845; border-radius: 14px; padding: 14px;
+    }
+    .modalHead { display:flex; align-items:center; justify-content:space-between; gap: 12px; }
+    .modalHead h3 { margin:0; }
+    .scanBox {
+      margin-top: 12px;
+      border: 1px dashed #2a355c;
+      border-radius: 14px;
+      padding: 10px;
+      background:#0e1426;
+    }
+    .small { font-size: 12px; color:#9fb0d8; margin-top: 8px; }
+    .twoCol { display:grid; grid-template-columns: 1fr auto; gap: 10px; align-items:end; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .thead { display:none; }
+      .trow { grid-template-columns: 1fr; }
+      .search { width: 100%; }
+      .twoCol { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="header">
+      <div>
+        <h1>Wound Vac Tracker</h1>
+        <p class="sub">PHI-free device tracking (Unit / Room / Bed)</p>
+      </div>
+      <button id="refreshBtn" class="btn">Refresh</button>
+    </header>
+
+    <div id="alert" class="alert" style="display:none;"></div>
+    <div id="ok" class="ok" style="display:none;"></div>
+
+    <section class="card">
+      <h2 style="margin:0 0 10px;">Supabase Connection</h2>
+      <div class="grid">
+        <label>
+          Supabase URL
+          <input id="sbUrl" placeholder="https://xxxx.supabase.co" />
+        </label>
+        <label class="wide">
+          Supabase Anon Key (public)
+          <input id="sbAnon" placeholder="eyJhbGciOi..." />
+        </label>
+        <div class="actions wide">
+          <button id="saveKeysBtn" class="btn primary">Save Keys (local)</button>
+          <button id="clearKeysBtn" class="btn">Clear Saved Keys</button>
+          <span class="hint">Saved in this browser only (LocalStorage). Don’t store PHI.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 style="margin:0 0 10px;">Add / Check-in Device</h2>
+
+      <form id="form" class="grid">
+        <label class="wide">
+          <div class="twoCol">
+            <div>
+              Device ID (barcode)
+              <input id="deviceId" placeholder="e.g., KCI-123456" />
+            </div>
+            <button id="scanBtn" class="btn primary" type="button">Scan</button>
+          </div>
+          <div class="small">Tip: Tap <b>Scan</b>, point camera at barcode/label. Works best with good light + steady focus.</div>
+        </label>
+
+        <label>
+          Vendor
+          <input id="vendor" value="KCI" />
+        </label>
+        <label>
+          Unit
+          <input id="unit" placeholder="e.g., 5W" />
+        </label>
+        <label>
+          Room
+          <input id="room" placeholder="e.g., 512" />
+        </label>
+        <label>
+          Bed
+          <input id="bed" placeholder="e.g., A" />
+        </label>
+        <label>
+          Status
+          <select id="status">
+            <option value="IN_USE">IN_USE</option>
+            <option value="IDLE">IDLE</option>
+            <option value="NEEDS_SERVICE">NEEDS_SERVICE</option>
+            <option value="LOST">LOST</option>
+          </select>
+        </label>
+        <label class="wide">
+          Notes (no PHI)
+          <input id="notes" placeholder="e.g., needs new canister / battery low" />
+        </label>
+        <div class="actions wide">
+          <button class="btn primary" type="submit">Save</button>
+          <span class="hint">Required: Device ID, Unit, Room, Bed</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <h2 style="margin:0;">Devices</h2>
+        <input id="search" class="search" placeholder="Search device, unit, room, status…" />
+      </div>
+
+      <div id="loading" class="pill" style="margin-top:12px; display:none;">Loading…</div>
+
+      <div id="table" class="table" style="margin-top:12px;">
+        <div class="thead">
+          <div>Device</div>
+          <div>Location</div>
+          <div>Status</div>
+          <div>Last Seen</div>
+          <div>Actions</div>
+        </div>
+        <div id="rows"></div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span class="muted">Data stored in Supabase Postgres. PHI-free fields only.</span>
+    </footer>
+  </div>
+
+  <!-- ✅ Safari-safe Supabase (UMD) -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+  <!-- ✅ Camera scanner library (works on iPhone Safari) -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+
+  <div id="scanModal" class="modalBack">
+    <div class="modal">
+      <div class="modalHead">
+        <h3>Scan Device Barcode</h3>
+        <div class="btnrow">
+          <button id="stopScanBtn" class="btn danger" type="button">Stop</button>
+          <button id="closeScanBtn" class="btn" type="button">Close</button>
+        </div>
+      </div>
+      <div class="scanBox">
+        <div id="qr-reader" style="width:100%;"></div>
+        <div class="small">
+          If it won’t scan: move closer/farther, increase light, wipe lens, hold steady. Some glossy labels need a slight angle.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const alertBox = $("alert");
+    const okBox = $("ok");
+    const loadingPill = $("loading");
+    const rowsEl = $("rows");
+
+    const sbUrl = $("sbUrl");
+    const sbAnon = $("sbAnon");
+
+    const STATUSES = ["IN_USE","IDLE","NEEDS_SERVICE","LOST"];
+
+    function showError(msg) {
+      okBox.style.display = "none";
+      alertBox.style.display = "block";
+      alertBox.textContent = "⚠️ " + msg;
+    }
+    function showOk(msg) {
+      alertBox.style.display = "none";
+      okBox.style.display = "block";
+      okBox.textContent = "✅ " + msg;
+      setTimeout(() => { okBox.style.display = "none"; }, 2500);
+    }
+    function clearError() {
+      alertBox.style.display = "none";
+      alertBox.textContent = "";
+    }
+    function setLoading(on) {
+      loadingPill.style.display = on ? "inline-flex" : "none";
+    }
+
+    function formatDt(iso) {
+      try { return new Date(iso).toLocaleString(); } catch { return iso; }
+    }
+
+    function getSavedKeys() {
+      return {
+        url: localStorage.getItem("WV_SB_URL") || "",
+        anon: localStorage.getItem("WV_SB_ANON") || ""
+      };
+    }
+
+    function saveKeys(url, anon) {
+      localStorage.setItem("WV_SB_URL", url);
+      localStorage.setItem("WV_SB_ANON", anon);
+    }
+
+    function clearKeys() {
+      localStorage.removeItem("WV_SB_URL");
+      localStorage.removeItem("WV_SB_ANON");
+    }
+
+    function normalizeUrl(u) {
+      // remove trailing slash if user pastes it
+      return String(u || "").trim().replace(/\/+$/, "");
+    }
+
+    function makeClient() {
+      const url = normalizeUrl(sbUrl.value);
+      const anon = (sbAnon.value || "").trim();
+      if (!url || !anon) throw new Error("Paste Supabase URL + Anon key, then Save Keys.");
+      if (!window.supabase || !window.supabase.createClient) {
+        throw new Error("Supabase library failed to load. Try refreshing the page.");
+      }
+      return window.supabase.createClient(url, anon);
+    }
+
+    // preload saved keys
+    const saved = getSavedKeys();
+    sbUrl.value = saved.url;
+    sbAnon.value = saved.anon;
+
+    $("saveKeysBtn").addEventListener("click", () => {
+      try {
+        const url = normalizeUrl(sbUrl.value);
+        const anon = sbAnon.value.trim();
+        if (!url || !anon) return showError("Supabase URL and anon key are required.");
+        saveKeys(url, anon);
+        clearError();
+        showOk("Keys saved locally. Tap Refresh.");
+      } catch (e) {
+        showError(e.message || String(e));
+      }
+    });
+
+    $("clearKeysBtn").addEventListener("click", () => {
+      clearKeys();
+      sbUrl.value = "";
+      sbAnon.value = "";
+      showOk("Saved keys cleared.");
+    });
+
+    let allRows = [];
+
+    async function load() {
+      clearError();
+      setLoading(true);
+      rowsEl.innerHTML = "";
+
+      let supabase;
+      try {
+        supabase = makeClient();
+      } catch (e) {
+        setLoading(false);
+        return showError(e.message || String(e));
+      }
+
+      const { data, error } = await supabase
+        .from("wound_vacs")
+        .select("*")
+        .order("last_seen", { ascending: false });
+
+      if (error) {
+        setLoading(false);
+        return showError(error.message);
+      }
+
+      allRows = data || [];
+      render();
+      setLoading(false);
+    }
+
+    function render() {
+      const q = ($("search").value || "").trim().toLowerCase();
+      const filtered = !q ? allRows : allRows.filter(r => {
+        const hay = `${r.device_id} ${r.vendor} ${r.unit} ${r.room} ${r.bed} ${r.status} ${r.notes || ""}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      if (filtered.length === 0) {
+        rowsEl.innerHTML = `<div class="muted" style="padding:10px 6px;">No records found.</div>`;
+        return;
+      }
+
+      rowsEl.innerHTML = filtered.map(r => `
+        <div class="trow">
+          <div>
+            <div class="strong">${escapeHtml(r.device_id)}</div>
+            <div class="muted">${escapeHtml(r.vendor || "KCI")}</div>
+          </div>
+          <div>
+            <div class="strong">${escapeHtml(r.unit)}</div>
+            <div class="muted">Room ${escapeHtml(r.room)} • Bed ${escapeHtml(r.bed)}</div>
+          </div>
+          <div>
+            <select data-id="${r.id}" class="statusSel">
+              ${STATUSES.map(s => `<option value="${s}" ${r.status===s?"selected":""}>${s}</option>`).join("")}
+            </select>
+            <div class="muted">${r.notes ? escapeHtml(r.notes) : "—"}</div>
+          </div>
+          <div class="mono">${formatDt(r.last_seen)}</div>
+          <div class="btnrow">
+            <button class="btn seenBtn" data-id="${r.id}">Seen</button>
+            <button class="btn danger delBtn" data-id="${r.id}">Delete</button>
+          </div>
+        </div>
+      `).join("");
+
+      rowsEl.querySelectorAll(".statusSel").forEach(sel => {
+        sel.addEventListener("change", async (e) => {
+          const id = e.target.getAttribute("data-id");
+          await updateStatus(id, e.target.value);
+        });
+      });
+      rowsEl.querySelectorAll(".seenBtn").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+          const id = e.target.getAttribute("data-id");
+          await markSeen(id);
+        });
+      });
+      rowsEl.querySelectorAll(".delBtn").forEach(btn => {
+        btn.addEventListener("click", async (e) => {
+          const id = e.target.getAttribute("data-id");
+          await removeRow(id);
+        });
+      });
+    }
+
+    async function addRow(payload) {
+      clearError();
+      let supabase;
+      try { supabase = makeClient(); } catch (e) { return showError(e.message); }
+
+      const { error } = await supabase.from("wound_vacs").insert(payload);
+      if (error) return showError(error.message);
+      await load();
+      showOk("Saved to Supabase.");
+    }
+
+    async function updateStatus(id, newStatus) {
+      clearError();
+      let supabase;
+      try { supabase = makeClient(); } catch (e) { return showError(e.message); }
+
+      const { error } = await supabase
+        .from("wound_vacs")
+        .update({ status: newStatus, last_seen: new Date().toISOString() })
+        .eq("id", id);
+
+      if (error) return showError(error.message);
+      await load();
+    }
+
+    async function markSeen(id) {
+      clearError();
+      let supabase;
+      try { supabase = makeClient(); } catch (e) { return showError(e.message); }
+
+      const { error } = await supabase
+        .from("wound_vacs")
+        .update({ last_seen: new Date().toISOString() })
+        .eq("id", id);
+
+      if (error) return showError(error.message);
+      await load();
+    }
+
+    async function removeRow(id) {
+      if (!confirm("Delete this device record?")) return;
+      clearError();
+      let supabase;
+      try { supabase = makeClient(); } catch (e) { return showError(e.message); }
+
+      const { error } = await supabase.from("wound_vacs").delete().eq("id", id);
+      if (error) return showError(error.message);
+      await load();
+    }
+
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+
+      const device_id = $("deviceId").value.trim();
+      const vendor = ($("vendor").value || "KCI").trim() || "KCI";
+      const unit = $("unit").value.trim();
+      const room = $("room").value.trim();
+      const bed = $("bed").value.trim();
+      const status = $("status").value;
+      const notes = $("notes").value.trim() || null;
+
+      if (!device_id || !unit || !room || !bed) {
+        return showError("Device ID, Unit, Room, and Bed are required.");
+      }
+
+      await addRow({
+        device_id, vendor, unit, room, bed,
+        status,
+        notes,
+        last_seen: new Date().toISOString()
+      });
+
+      $("deviceId").value = "";
+      $("unit").value = "";
+      $("room").value = "";
+      $("bed").value = "";
+      $("status").value = "IN_USE";
+      $("notes").value = "";
+    });
+
+    $("search").addEventListener("input", render);
+    $("refreshBtn").addEventListener("click", load);
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, s => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[s]));
+    }
+
+    // --------------------
+    // Camera scan (iPhone Safari compatible)
+    // --------------------
+    const scanModal = $("scanModal");
+    const scanBtn = $("scanBtn");
+    const closeScanBtn = $("closeScanBtn");
+    const stopScanBtn = $("stopScanBtn");
+
+    let html5Qr = null;
+    let scanning = false;
+
+    function openModal() {
+      scanModal.style.display = "flex";
+    }
+    function closeModal() {
+      scanModal.style.display = "none";
+    }
+
+    async function startScan() {
+      clearError();
+
+      if (!window.Html5Qrcode) {
+        return showError("Scanner library failed to load. Refresh the page.");
+      }
+
+      openModal();
+
+      if (scanning) return;
+      scanning = true;
+
+      const regionId = "qr-reader";
+      html5Qr = new Html5Qrcode(regionId);
+
+      // Try back camera
+      const config = {
+        fps: 10,
+        qrbox: { width: 280, height: 180 },
+        // include common barcode formats; library will choose what it can decode
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ]
+      };
+
+      try {
+        await html5Qr.start(
+          { facingMode: "environment" },
+          config,
+          (decodedText) => {
+            // success
+            $("deviceId").value = (decodedText || "").trim();
+            showOk("Scanned device ID.");
+            stopScan(); // auto-stop after first scan
+            closeModal();
+          },
+          () => { /* ignore per-frame failures */ }
+        );
+      } catch (e) {
+        scanning = false;
+        showError("Camera scan failed. Ensure Safari has Camera permission for this site (Settings → Safari → Camera).");
+      }
+    }
+
+    async function stopScan() {
+      if (!html5Qr) { scanning = false; return; }
+      try {
+        await html5Qr.stop();
+        await html5Qr.clear();
+      } catch {}
+      html5Qr = null;
+      scanning = false;
+    }
+
+    scanBtn.addEventListener("click", startScan);
+    closeScanBtn.addEventListener("click", async () => {
+      await stopScan();
+      closeModal();
+    });
+    stopScanBtn.addEventListener("click", async () => {
+      await stopScan();
+      showOk("Scanner stopped.");
+    });
+
+    // initial load if keys already saved
+    if (sbUrl.value && sbAnon.value) load();
+  </script>
+</body>
+</html>
