@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wound Vac Tracker</title>
+
+<style>
+:root { font-family: system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+body { margin:0;background:#0b0e14;color:#e8eefc; }
+.wrap{max-width:1100px;margin:0 auto;padding:18px}
+.header{display:flex;justify-content:space-between;align-items:center}
+.card{background:#121829;border:1px solid #202845;border-radius:14px;padding:14px;margin-top:14px}
+h1{margin:0;font-size:22px}
+.sub{font-size:13px;color:#a7b2cc}
+label{display:flex;flex-direction:column;font-size:13px;color:#b8c2dd;margin-bottom:10px}
+input,select{padding:10px;border-radius:10px;border:1px solid #2a355c;background:#0e1426;color:#e8eefc}
+.btn{padding:10px 12px;border-radius:10px;border:1px solid #2a355c;background:#0e1426;color:#e8eefc}
+.primary{background:#1a3cff;border-color:#1a3cff}
+.alert{background:#2a1a1a;border:1px solid #5a2b2b;padding:10px;border-radius:10px;margin-top:10px}
+.ok{background:#132a1a;border:1px solid #2b5a3a;padding:10px;border-radius:10px;margin-top:10px}
+.hidden{display:none}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.wide{grid-column:1/-1}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+<header class="header">
+  <div>
+    <h1>Wound Vac Tracker</h1>
+    <div class="sub">PHI-free device tracking (Unit / Room / Bed)</div>
+  </div>
+  <button class="btn" onclick="loadData()">Refresh</button>
+</header>
+
+<div id="error" class="alert hidden"></div>
+<div id="ok" class="ok hidden"></div>
+
+<section class="card">
+<h2>Supabase Connection</h2>
+
+<label>
+Supabase Project URL
+<input id="sbUrl" placeholder="https://xxxxx.supabase.co">
+</label>
+
+<label>
+Supabase anon public key
+<input id="sbKey" placeholder="eyJhbGciOi...">
+</label>
+
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<button class="btn primary" onclick="saveKeys()">Save Keys</button>
+<button class="btn" onclick="testConnection()">Test Connection</button>
+<button class="btn" onclick="clearKeys()">Clear</button>
+</div>
+</section>
+
+<section class="card">
+<h2>Add / Check-in Device</h2>
+
+<label>
+Device ID
+<div style="display:flex;gap:10px">
+<input id="device_id" placeholder="KCI-123456" style="flex:1">
+<button class="btn primary" onclick="startScan()">Scan</button>
+</div>
+</label>
+
+<div class="grid">
+<label>Vendor<input id="vendor" value="KCI"></label>
+<label>Unit<input id="unit"></label>
+<label>Room<input id="room"></label>
+<label>Bed<input id="bed"></label>
+</div>
+
+<label>Status
+<select id="status">
+<option>IN_USE</option>
+<option>IDLE</option>
+<option>NEEDS_SERVICE</option>
+<option>LOST</option>
+</select>
+</label>
+
+<button class="btn primary" onclick="saveDevice()">Save Device</button>
+</section>
+
+<section class="card">
+<h2>Devices</h2>
+<div id="devices"></div>
+</section>
+
+</div>
+
+<!-- ✅ Safari-safe Supabase -->
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+<!-- ✅ Camera scanning -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+
+<script>
+const errorBox = document.getElementById("error");
+const okBox = document.getElementById("ok");
+
+function showError(msg){
+  okBox.classList.add("hidden");
+  errorBox.classList.remove("hidden");
+  errorBox.innerText = "❌ " + msg;
+}
+function showOk(msg){
+  errorBox.classList.add("hidden");
+  okBox.classList.remove("hidden");
+  okBox.innerText = "✅ " + msg;
+}
+
+function normalize(url){ return (url||"").trim().replace(/\/+$/,""); }
+
+function saveKeys(){
+  localStorage.setItem("SB_URL", normalize(sbUrl.value));
+  localStorage.setItem("SB_KEY", sbKey.value.trim());
+  showOk("Keys saved locally");
+}
+
+function clearKeys(){
+  localStorage.clear();
+  sbUrl.value="";
+  sbKey.value="";
+  showOk("Cleared");
+}
+
+function getClient(){
+  const url = normalize(sbUrl.value);
+  const key = sbKey.value.trim();
+  if(!url || !key) throw "Missing Supabase credentials";
+  return window.supabase.createClient(url,key);
+}
+
+async function testConnection(){
+  try{
+    const url = normalize(sbUrl.value);
+    const key = sbKey.value.trim();
+    const r = await fetch(url + "/rest/v1/",{
+      headers:{apikey:key,Authorization:"Bearer "+key}
+    });
+    showOk("Supabase reachable (HTTP "+r.status+")");
+  }catch(e){
+    showError("Supabase URL is invalid or project does not exist");
+  }
+}
+
+async function loadData(){
+  try{
+    const supa = getClient();
+    const {data,error} = await supa.from("wound_vacs").select("*");
+    if(error) throw error.message;
+    devices.innerHTML = data.map(d=>`
+      <div style="margin-bottom:8px">
+        <b>${d.device_id}</b> — ${d.unit} / ${d.room}${d.bed} (${d.status})
+      </div>`).join("");
+  }catch(e){
+    showError(e);
+  }
+}
+
+async function saveDevice(){
+  try{
+    const supa = getClient();
+    const payload = {
+      device_id:device_id.value,
+      vendor:vendor.value,
+      unit:unit.value,
+      room:room.value,
+      bed:bed.value,
+      status:status.value,
+      last_seen:new Date().toISOString()
+    };
+    const {error} = await supa.from("wound_vacs").insert(payload);
+    if(error) throw error.message;
+    showOk("Saved to Supabase");
+    loadData();
+  }catch(e){ showError(e); }
+}
+
+/* Camera scan */
+let qr;
+function startScan(){
+  if(!window.Html5Qrcode) return showError("Camera lib failed");
+  qr = new Html5Qrcode("devices");
+  qr.start({facingMode:"environment"},{fps:10,qrbox:250},
+    txt=>{device_id.value=txt;qr.stop();showOk("Scanned");},
+    ()=>{}
+  );
+}
+
+/* Load saved keys */
+sbUrl.value = localStorage.getItem("SB_URL")||"";
+sbKey.value = localStorage.getItem("SB_KEY")||"";
+if(sbUrl.value && sbKey.value) loadData();
+</script>
+</body>
+</html>
