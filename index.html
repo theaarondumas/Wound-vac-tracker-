@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Wound Vac Tracker (PHI-Free)</title>
+  <style>
+    :root { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { margin: 0; padding: 16px; background: #0b0c10; color: #e8e8e8; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    .sub { color: #b6b6b6; font-size: 13px; margin: 0 0 14px; line-height: 1.35; }
+    .card { background: #15171c; border: 1px solid #2a2f3a; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .row > * { flex: 1 1 150px; }
+    label { display:block; font-size: 12px; color:#b6b6b6; margin: 10px 0 6px; }
+    input, select, textarea, button {
+      width: 100%; box-sizing: border-box; border-radius: 12px; border: 1px solid #2a2f3a;
+      background: #0f1116; color: #e8e8e8; padding: 12px; font-size: 15px;
+      outline: none;
+    }
+    textarea { min-height: 74px; resize: vertical; }
+    button { cursor: pointer; border: 1px solid #3b4252; background: #1a1f2a; font-weight: 600; }
+    button.primary { background: #2a66ff; border-color:#2a66ff; }
+    button.danger { background:#c0392b; border-color:#c0392b; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .hint { font-size: 12px; color:#b6b6b6; margin-top: 8px; line-height: 1.35; }
+    .status { font-size: 13px; margin-top: 10px; color:#ffd479; }
+    .ok { color: #8affb3; }
+    .err { color: #ff8a8a; }
+    .toolbar { display:flex; gap: 10px; flex-wrap: wrap; }
+    .toolbar > * { flex: 1 1 160px; }
+    video { width: 100%; border-radius: 14px; border: 1px solid #2a2f3a; background: #000; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #2a2f3a; font-size: 13px; }
+    th { color:#b6b6b6; font-weight:600; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .pill { display:inline-block; padding: 4px 8px; border-radius: 999px; background:#0f1116; border:1px solid #2a2f3a; font-size: 12px; color:#b6b6b6; }
+    .footer { margin-top: 10px; font-size: 12px; color:#7f8796; }
+  </style>
+</head>
+
+<body>
+  <h1>Wound Vac Tracker (PHI-Free)</h1>
+  <p class="sub">
+    Track devices by <b>Device ID (barcode)</b> + location (<b>Unit / Room / Bed</b>). No patient names, MRNs, DOB, or PHI.
+    Works on iPhone Safari via user-tap camera start. Barcode scanning uses native <span class="pill">BarcodeDetector</span> when available.
+  </p>
+
+  <div class="card">
+    <div class="toolbar">
+      <button id="btnStart" class="primary">Start Scan (Camera)</button>
+      <button id="btnStop" disabled>Stop Camera</button>
+      <button id="btnTorch" disabled>Toggle Torch</button>
+      <button id="btnClearAll" class="danger">Clear All Records</button>
+    </div>
+
+    <div style="margin-top:12px;">
+      <video id="video" playsinline muted></video>
+      <div id="scanStatus" class="status">Ready. Tap <b>Start Scan</b> to request camera permission.</div>
+      <div class="hint">
+        If scan doesn’t work on your device, manually type the Device ID below. Some iOS versions restrict barcode detection in the browser.
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Device ID (scan or type)</label>
+        <input id="deviceId" class="mono" placeholder="e.g., KCI-123456789" autocomplete="off" />
+      </div>
+      <div>
+        <label>Status</label>
+        <select id="status">
+          <option value="IN_STOCK">IN_STOCK</option>
+          <option value="ISSUED">ISSUED</option>
+          <option value="IN_USE">IN_USE</option>
+          <option value="SOILED">SOILED</option>
+          <option value="RETURNED">RETURNED</option>
+          <option value="MISSING">MISSING</option>
+          <option value="SERVICE">SERVICE</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Unit</label>
+        <input id="unit" placeholder="e.g., 4N / ICU / ED" autocomplete="off" />
+      </div>
+      <div>
+        <label>Room</label>
+        <input id="room" placeholder="e.g., 412" autocomplete="off" />
+      </div>
+      <div>
+        <label>Bed</label>
+        <input id="bed" placeholder="e.g., A / B" autocomplete="off" />
+      </div>
+    </div>
+
+    <label>Notes (PHI-free only)</label>
+    <textarea id="notes" placeholder="e.g., 'Found in clean utility', 'Needs canister', 'Battery low'"></textarea>
+
+    <div class="toolbar" style="margin-top:12px;">
+      <button id="btnSave" class="primary">Save Record</button>
+      <button id="btnExport">Export CSV</button>
+      <button id="btnDemo">Demo Fill (Test)</button>
+    </div>
+
+    <div class="footer">
+      Data is saved to <span class="pill">localStorage</span> on this device/browser only.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Search (Device ID / Unit / Room / Bed)</label>
+        <input id="search" placeholder="type to filter…" autocomplete="off" />
+      </div>
+      <div>
+        <label>Quick Stats</label>
+        <div id="stats" class="hint">—</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Device ID</th>
+          <th>Status</th>
+          <th>Location</th>
+          <th>Notes</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+<script>
+(() => {
+  // -----------------------------
+  // Storage
+  // -----------------------------
+  const KEY = "woundvac_records_v1";
+
+  function loadRecords() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "[]"); }
+    catch { return []; }
+  }
+  function saveRecords(records) {
+    localStorage.setItem(KEY, JSON.stringify(records));
+  }
+
+  // -----------------------------
+  // DOM
+  // -----------------------------
+  const video = document.getElementById("video");
+  const scanStatus = document.getElementById("scanStatus");
+
+  const btnStart = document.getElementById("btnStart");
+  const btnStop = document.getElementById("btnStop");
+  const btnTorch = document.getElementById("btnTorch");
+  const btnClearAll = document.getElementById("btnClearAll");
+
+  const deviceId = document.getElementById("deviceId");
+  const statusEl = document.getElementById("status");
+  const unit = document.getElementById("unit");
+  const room = document.getElementById("room");
+  const bed = document.getElementById("bed");
+  const notes = document.getElementById("notes");
+
+  const btnSave = document.getElementById("btnSave");
+  const btnExport = document.getElementById("btnExport");
+  const btnDemo = document.getElementById("btnDemo");
+
+  const search = document.getElementById("search");
+  const tbody = document.getElementById("tbody");
+  const stats = document.getElementById("stats");
+
+  // -----------------------------
+  // Camera + scanning
+  // -----------------------------
+  let activeStream = null;
+  let scanning = false;
+  let torchOn = false;
+
+  function setStatus(msg, cls) {
+    scanStatus.className = "status " + (cls || "");
+    scanStatus.textContent = msg;
+  }
+
+  async function startCamera() {
+    // MUST be called from a real user tap (iOS requirement)
+    video.setAttribute("playsinline", "true");
+    video.muted = true;
+
+    // Try "environment" camera but NOT "exact" (exact often fails iOS)
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: "environment",
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    };
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      await video.play();
+      return stream;
+    } catch (e) {
+      // Fallback: any camera
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      video.srcObject = stream;
+      await video.play();
+      return stream;
+    }
+  }
+
+  function stopCamera() {
+    scanning = false;
+    torchOn = false;
+
+    if (activeStream) {
+      activeStream.getTracks().forEach(t => t.stop());
+      activeStream = null;
+    }
+    video.srcObject = null;
+
+    btnStop.disabled = true;
+    btnTorch.disabled = true;
+    setStatus("Camera stopped. Tap Start Scan when ready.", "");
+  }
+
+  async function toggleTorch() {
+    if (!activeStream) return;
+    const track = activeStream.getVideoTracks()[0];
+    if (!track) return;
+
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (!caps.torch) {
+      setStatus("Torch not supported on this device/browser.", "err");
+      return;
+    }
+
+    torchOn = !torchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+      setStatus(torchOn ? "Torch ON" : "Torch OFF", "ok");
+    } catch {
+      setStatus("Could not toggle torch.", "err");
+    }
+  }
+
+  function canBarcodeDetect() {
+    return "BarcodeDetector" in window;
+  }
+
+  async function scanLoop() {
+    if (!canBarcodeDetect()) {
+      setStatus("BarcodeDetector not available here. Manual entry is enabled.", "err");
+      return;
+    }
+
+    const detector = new BarcodeDetector({
+      // Common formats — add/remove as needed
+      formats: ["code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e", "qr_code"]
+    });
+
+    scanning = true;
+    setStatus("Scanning… hold barcode steady and fill the frame.", "ok");
+
+    while (scanning && activeStream) {
+      try {
+        // createImageBitmap is widely supported; if it fails, we just retry
+        const bitmap = await createImageBitmap(video);
+        const codes = await detector.detect(bitmap);
+
+        if (codes && codes.length) {
+          const val = (codes[0].rawValue || "").trim();
+          if (val) {
+            deviceId.value = val;
+            setStatus("Scanned: " + val, "ok");
+            // Optional: stop camera after successful scan
+            stopCamera();
+            deviceId.focus();
+            return;
+          }
+        }
+      } catch (e) {
+        // Keep looping; iOS can throw occasionally while video warms up
+      }
+      await new Promise(r => setTimeout(r, 140));
+    }
+  }
+
+  // -----------------------------
+  // Records UI
+  // -----------------------------
+  function fmtTime(ts) {
+    const d = new Date(ts);
+    return d.toLocaleString();
+  }
+
+  function sanitizeCSV(s) {
+    const str = String(s ?? "");
+    // Prevent CSV formula injection
+    if (/^[=+\-@]/.test(str)) return "'" + str;
+    return str;
+  }
+
+  function recordsFiltered(records) {
+    const q = search.value.trim().toLowerCase();
+    if (!q) return records;
+    return records.filter(r => {
+      const hay = `${r.deviceId} ${r.status} ${r.unit} ${r.room} ${r.bed} ${r.notes}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  function render() {
+    const records = loadRecords();
+    const filtered = recordsFiltered(records);
+
+    // Stats
+    const byStatus = {};
+    for (const r of records) byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+    const summary = Object.entries(byStatus)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([k,v]) => `${k}: ${v}`)
+      .join(" • ");
+    stats.textContent = records.length ? `Total: ${records.length} • ${summary}` : "No records yet.";
+
+    // Table
+    tbody.innerHTML = "";
+    for (const r of filtered) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fmtTime(r.ts)}</td>
+        <td class="mono">${escapeHtml(r.deviceId)}</td>
+        <td>${escapeHtml(r.status)}</td>
+        <td>${escapeHtml([r.unit,r.room,r.bed].filter(Boolean).join(" / "))}</td>
+        <td>${escapeHtml(r.notes || "")}</td>
+        <td><button data-del="${r.id}">Delete</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    // Wire delete buttons
+    tbody.querySelectorAll("button[data-del]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-del");
+        const records = loadRecords().filter(x => x.id !== id);
+        saveRecords(records);
+        render();
+      });
+    });
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function resetFormKeepLocation() {
+    deviceId.value = "";
+    statusEl.value = "IN_STOCK";
+    notes.value = "";
+    deviceId.focus();
+  }
+
+  // -----------------------------
+  // Actions
+  // -----------------------------
+  btnStart.addEventListener("click", async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus("Camera API not supported in this browser.", "err");
+      return;
+    }
+
+    try {
+      btnStart.disabled = true;
+      setStatus("Requesting camera permission…", "");
+
+      activeStream = await startCamera();
+
+      btnStop.disabled = false;
+      btnTorch.disabled = false;
+
+      // Kick off scan loop (if supported)
+      if (canBarcodeDetect()) {
+        await scanLoop();
+      } else {
+        setStatus("Camera is live. BarcodeDetector not available; manually type Device ID.", "err");
+      }
+    } catch (e) {
+      setStatus("Camera failed. Check Safari permissions (Settings → Safari → Camera → Allow).", "err");
+    } finally {
+      btnStart.disabled = false;
+    }
+  });
+
+  btnStop.addEventListener("click", () => stopCamera());
+  btnTorch.addEventListener("click", () => toggleTorch());
+
+  btnSave.addEventListener("click", () => {
+    const idVal = deviceId.value.trim();
+    if (!idVal) {
+      alert("Device ID is required (scan or type).");
+      deviceId.focus();
+      return;
+    }
+
+    const record = {
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "_" + Math.random().toString(16).slice(2),
+      ts: Date.now(),
+      deviceId: idVal,
+      status: statusEl.value,
+      unit: unit.value.trim(),
+      room: room.value.trim(),
+      bed: bed.value.trim(),
+      notes: notes.value.trim()
+    };
+
+    const records = loadRecords();
+    records.unshift(record);
+    saveRecords(records);
+
+    setStatus("Saved record for " + idVal, "ok");
+    render();
+    resetFormKeepLocation();
+  });
+
+  btnExport.addEventListener("click", () => {
+    const records = loadRecords();
+    if (!records.length) {
+      alert("No records to export.");
+      return;
+    }
+
+    const headers = ["timestamp","device_id","status","unit","room","bed","notes"];
+    const lines = [headers.join(",")];
+
+    for (const r of records) {
+      const row = [
+        new Date(r.ts).toISOString(),
+        sanitizeCSV(r.deviceId),
+        sanitizeCSV(r.status),
+        sanitizeCSV(r.unit),
+        sanitizeCSV(r.room),
+        sanitizeCSV(r.bed),
+        sanitizeCSV(r.notes || "")
+      ].map(v => `"${String(v).replaceAll('"','""')}"`);
+      lines.push(row.join(","));
+    }
+
+    const csv = lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "woundvac_records.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  btnClearAll.addEventListener("click", () => {
+    const ok = confirm("Clear ALL records on this device? This cannot be undone.");
+    if (!ok) return;
+    saveRecords([]);
+    setStatus("All records cleared.", "");
+    render();
+  });
+
+  btnDemo.addEventListener("click", () => {
+    deviceId.value = "KCI-" + Math.floor(100000000 + Math.random() * 900000000);
+    unit.value = unit.value || "ICU";
+    room.value = room.value || "412";
+    bed.value = bed.value || "A";
+    notes.value = "Demo record (PHI-free).";
+    setStatus("Demo values filled. Tap Save Record.", "");
+  });
+
+  search.addEventListener("input", () => render());
+
+  // Stop camera when leaving page
+  window.addEventListener("pagehide", () => stopCamera());
+
+  // Initial render
+  render();
+  setStatus("Ready. Tap Start Scan to request camera permission.", "");
+})();
+</script>
+
+</body>
+</html>
